@@ -23,17 +23,18 @@ try {
     
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS users (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            username VARCHAR(50) NOT NULL UNIQUE,
-            email VARCHAR(100) NOT NULL UNIQUE,
-            password VARCHAR(255) NOT NULL,
-            profile_pic VARCHAR(255),
-            height_feet DECIMAL(3,1),
-            age INT,
-            skin_color VARCHAR(50),
-            interests VARCHAR(255),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        username VARCHAR(50) NOT NULL UNIQUE,
+        email VARCHAR(100) NOT NULL UNIQUE,
+        password VARCHAR(255) NOT NULL,
+        profile_pic VARCHAR(255),
+        height_feet DECIMAL(3,1),
+        age INT,
+        skin_color VARCHAR(50),
+        interests VARCHAR(255),
+        gender ENUM('Male', 'Female', 'Non-binary', 'Other') NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
         
         CREATE TABLE IF NOT EXISTS messages (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -86,9 +87,10 @@ function getProfilePic($path) {
 
 function getUsers($currentUserId, $pdo) {
     $stmt = $pdo->prepare("
-        SELECT id, username, email, profile_pic, height_feet, age, skin_color, interests 
+        SELECT id, username, email, profile_pic, height_feet, age, skin_color, interests, gender
         FROM users 
         WHERE id != ?
+        ORDER BY username ASC
     ");
     $stmt->execute([$currentUserId]);
     return $stmt->fetchAll();
@@ -246,7 +248,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'register') {
     $age = isset($_POST['age']) ? intval($_POST['age']) : null;
     $skinColor = trim($_POST['skin_color']) ?? null;
     $interests = isset($_POST['interests']) ? implode(',', $_POST['interests']) : null;
-    
+    $gender = trim($_POST['gender'] ?? null);
+
     // Validation
     $errors = [];
     if (empty($username)) $errors[] = 'Username is required';
@@ -256,6 +259,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'register') {
     if (strlen($password) < 6) $errors[] = 'Password must be at least 6 characters';
     if (!empty($height) && ($height < 3 || $height > 8)) $errors[] = 'Please enter a valid height between 3 and 8 feet';
     if (!empty($age) && ($age < 18 || $age > 120)) $errors[] = 'Please enter a valid age between 18 and 120';
+    if (empty($gender)) {
+        $errors[] = 'Gender is required';
+    }
     
     if (empty($errors)) {
         $profilePicPath = handleFileUpload($profilePic);
@@ -263,15 +269,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'register') {
         
         try {
             $stmt = $pdo->prepare("
-                INSERT INTO users (
-                    username, email, password, profile_pic, 
-                    height_feet, age, skin_color, interests
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ");
-            $stmt->execute([
-                $username, $email, $hashedPassword, $profilePicPath,
-                $height, $age, $skinColor, $interests
-            ]);
+            INSERT INTO users (
+                username, email, password, profile_pic, 
+                height_feet, age, skin_color, interests, gender
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([
+            $username, $email, $hashedPassword, $profilePicPath,
+            $height, $age, $skinColor, $interests, $gender
+        ]);
             
             $_SESSION['user_id'] = $pdo->lastInsertId();
             $_SESSION['username'] = $username;
@@ -671,6 +677,108 @@ if ($action === 'get_message_details' && isset($_GET['message_id'])) {
         .dropdown-content li > a, .dropdown-content li > span {
             color: var(--primary-color);
         }
+
+
+        /* Horizontal scrolling cards */
+.user-cards-container {
+    display: flex;
+    overflow-x: auto;
+    padding: 15px 0;
+    margin-bottom: 20px;
+    gap: 15px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--primary-color) #f5f5f5;
+}
+
+.user-cards-container::-webkit-scrollbar {
+    height: 8px;
+}
+
+.user-cards-container::-webkit-scrollbar-track {
+    background: #f5f5f5;
+    border-radius: 10px;
+}
+
+.user-cards-container::-webkit-scrollbar-thumb {
+    background-color: var(--primary-color);
+    border-radius: 10px;
+}
+
+.user-card {
+    flex: 0 0 auto;
+    width: 150px;
+    border-radius: 10px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    transition: transform 0.3s;
+    background: white;
+    cursor: pointer;
+}
+
+.user-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 5px 15px rgba(255,105,180,0.3);
+}
+
+.user-card-image {
+    width: 100%;
+    height: 120px;
+    object-fit: cover;
+    border-radius: 10px 10px 0 0;
+}
+
+.user-card-content {
+    padding: 10px;
+    text-align: center;
+}
+
+.user-card-name {
+    font-weight: 500;
+    margin-bottom: 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.user-card-age {
+    color: var(--primary-dark);
+    font-size: 0.9em;
+}
+.user-card-details {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.9em;
+    color: var(--primary-dark);
+}
+
+.user-card-gender {
+    color: #666;
+}
+
+/* Message User Modal Styles */
+#messageUserModal .modal-content {
+    padding: 24px;
+    border-radius: 10px 10px 0 0;
+}
+
+#messageUserModal .modal-footer {
+    border-radius: 0 0 10px 10px;
+    padding: 10px 24px;
+    background-color: #f5f5f5;
+}
+
+#messageUserModal .user-avatar {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--primary-light);
+}
+
+#messageUserModal .input-field {
+    margin-top: 20px;
+}
     </style>
 </head>
 <body>
@@ -854,7 +962,7 @@ if ($action === 'get_message_details' && isset($_GET['message_id'])) {
                                         <div class="input-field col s12 m4">
                                             <i class="material-icons prefix">palette</i>
                                             <select name="skin_color">
-                                                <option value="" disabled selected>Choose skin color</option>
+                                                <option value="" disabled selected>Skin color</option>
                                                 <option value="Light">Light</option>
                                                 <option value="Medium">Medium</option>
                                                 <option value="Dark">Dark</option>
@@ -863,18 +971,57 @@ if ($action === 'get_message_details' && isset($_GET['message_id'])) {
                                             <label>Skin Color</label>
                                         </div>
                                     </div>
+                                    <div class="row">
+                                        <div class="input-field col s12">
+                                            <label>Gender</label>
+                                            <select name="gender" required>
+                                                <option value="" disabled selected></option>
+                                                <option value="Male">Male</option>
+                                                <option value="Female">Female</option>
+                                                <option value="Non-binary">Non-binary</option>
+                                                <option value="Other">Other</option>
+                                            </select>
+                                        </div>
+                                    </div>
                                     
                                     <div class="row">
                                         <div class="col s12">
-                                            <label>I'm interested in messaging with:</label>
+                                            <label>I'm interested in:</label>
                                             <div class="input-field">
                                                 <select name="interests[]" multiple>
-                                                    <option value="Men">Men</option>
-                                                    <option value="Women">Women</option>
-                                                    <option value="Non-binary">Non-binary</option>
-                                                    <option value="Transgender">Transgender</option>
-                                                    <option value="Other">Other</option>
-                                                </select>
+                                                <option value="reading">Reading</option>
+                                                    <option value="writing">Writing</option>
+                                                    <option value="painting">Painting</option>
+                                                    <option value="drawing">Drawing</option>
+                                                    <option value="photography">Photography</option>
+                                                    <option value="hiking">Hiking</option>
+                                                    <option value="camping">Camping</option>
+                                                    <option value="swimming">Swimming</option>
+                                                    <option value="running">Running</option>
+                                                    <option value="cycling">Cycling</option>
+                                                    <option value="gardening">Gardening</option>
+                                                    <option value="cooking">Cooking</option>
+                                                    <option value="baking">Baking</option>
+                                                    <option value="playing_musical_instrument">Playing a Musical Instrument</option>
+                                                    <option value="listening_to_music">Listening to Music</option>
+                                                    <option value="watching_movies">Watching Movies</option>
+                                                    <option value="playing_video_games">Playing Video Games</option>
+                                                    <option value="board_games">Playing Board Games</option>
+                                                    <option value="knitting">Knitting</option>
+                                                    <option value="crocheting">Crocheting</option>
+                                                    <option value="woodworking">Woodworking</option>
+                                                    <option value="collecting">Collecting (e.g., stamps, coins)</option>
+                                                    <option value="traveling">Traveling</option>
+                                                    <option value="learning_languages">Learning Languages</option>
+                                                    <option value="volunteering">Volunteering</option>
+                                                    <option value="yoga">Yoga</option>
+                                                    <option value="meditation">Meditation</option>
+                                                    <option value="dancing">Dancing</option>
+                                                    <option value="birdwatching">Birdwatching</option>
+                                                    <option value="fishing">Fishing</option>
+                                                    <option value="sports">Playing Sports (specify in another field)</option>
+                                                    <option value="other">Other</option>
+                                            </select>
                                             </div>
                                         </div>
                                     </div>
@@ -896,6 +1043,30 @@ if ($action === 'get_message_details' && isset($_GET['message_id'])) {
             <!-- Main App Content -->
             <div class="row">
                 <div class="col s12">
+
+                <!-- Horizontal Cards -->
+
+                <?php if (isLoggedIn()): ?>
+                    <div class="user-cards-container">
+                        <?php 
+                        $allUsers = getUsers($_SESSION['user_id'], $pdo);
+                        foreach ($allUsers as $user): 
+                            $profilePic = getProfilePic($user['profile_pic']);
+                        ?>
+                            <div class="user-card" onclick="openUserModal(<?= $user['id'] ?>, '<?= htmlspecialchars(addslashes($user['username'])) ?>', '<?= getProfilePic($user['profile_pic']) ?>')">
+
+                                <img src="<?= $profilePic ?>" alt="<?= htmlspecialchars($user['username']) ?>" class="user-card-image">
+                                <div class="user-card-content">
+                                    <div class="user-card-name"><?= htmlspecialchars($user['username']) ?></div>
+                                    <div class="user-card-age"><?= $user['age'] ?? 'Age not set' ?></div>
+                                    <span class="user-card-gender">• <?= $user['gender'] ?? '' ?></span>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+
+                <!-- Inbox -->
                     <?php if ($action === 'view_inbox'): ?>
                         <!-- Unified Inbox View -->
                         <h4>Inbox</h4>
@@ -1070,17 +1241,103 @@ if ($action === 'get_message_details' && isset($_GET['message_id'])) {
             <?php header("Location: ?action=login"); exit(); ?>
         <?php endif; ?>
     </main>
+ 
+    <!-- Message User Card Modal -->
+<!-- Message User Modal -->
 
+<div id="messageUserModal" class="modal">
+    <div class="modal-content">
+        <h4>Message <span id="modalUserName"></span></h4>
+        <div class="row">
+            <div class="col s2">
+                <img id="modalUserImage" src="" class="user-avatar">
+            </div>
+            <div class="col s10">
+                <form id="messageUserForm" method="POST" action="?action=send_message">
+                    <input type="hidden" name="receiver_id" id="modalUserId">
+                    <div class="input-field">
+                        <textarea id="modalMessageBody" class="materialize-textarea" name="body" required></textarea>
+                        <label for="modalMessageBody">Your message</label>
+                    </div>
+                    <div class="modal-footer">
+                        <a href="#!" class="modal-close btn grey waves-effect waves-light">Cancel</a>
+                        <button type="submit" class="btn pink waves-effect waves-light">Send Message</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
     <!-- JavaScript -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+
+
+            
             // Initialize dropdown
             M.Dropdown.init(document.querySelectorAll('.dropdown-trigger'), {
                 coverTrigger: false,
                 constrainWidth: false,
                 hover: false
             });
+
+            // Initialize the message user modal when user card is clicked
+            const modals = {
+        replyModal: M.Modal.init(document.getElementById('replyModal'), {
+            dismissible: true,
+            onCloseEnd: function() {
+                document.getElementById('reply_body').value = '';
+            }
+        }),
+
+        messageUserModal: M.Modal.init(document.getElementById('messageUserModal'), {
+            dismissible: true,
+            onCloseStart: function() {
+                // Optional: Add any pre-close actions here
+            },
+            onCloseEnd: function() {
+                document.getElementById('modalMessageBody').value = '';
+            }
+        })
+    };
+
+    window.appModals = modals;
+
+    window.openUserModal = function(userId, userName, userImage) {
+        document.getElementById('modalUserName').textContent = userName;
+        document.getElementById('modalUserImage').src = userImage;
+        document.getElementById('modalUserId').value = userId;
+        document.getElementById('modalMessageBody').value = '';
+        
+        modals.messageUserModal.open();
+        
+        setTimeout(() => {
+            document.getElementById('modalMessageBody').focus();
+        }, 100);
+    };
+
+
+
+            // horizontal cards
+            function openUserModal(userId, userName, userImage) {
+                    // Set modal content
+                    document.getElementById('modalUserName').textContent = userName;
+                    document.getElementById('modalUserImage').src = userImage;
+                    document.getElementById('modalUserId').value = userId;
+                    
+                    // Reset form
+                    document.getElementById('modalMessageBody').value = '';
+                    
+                    // Open modal
+                    const modal = M.Modal.getInstance(document.getElementById('messageUserModal'));
+                    modal.open();
+                    
+                    // Focus textarea
+                    setTimeout(() => {
+                        document.getElementById('modalMessageBody').focus();
+                    }, 100);
+}
 
              // Initialize mobile sidenav
              M.Sidenav.init(document.querySelectorAll('.sidenav'));
@@ -1200,5 +1457,30 @@ if ($action === 'get_message_details' && isset($_GET['message_id'])) {
                 });
         }
     </script>
+
+    <!-- Message User Modal -->
+<div id="messageUserModal" class="modal">
+    <div class="modal-content">
+        <h4>Message <span id="modalUserName"></span></h4>
+        <div class="row">
+            <div class="col s2">
+                <img id="modalUserImage" src="" class="user-avatar">
+            </div>
+            <div class="col s10">
+                <form id="messageUserForm" method="POST" action="?action=send_message">
+                    <input type="hidden" name="receiver_id" id="modalUserId">
+                    <div class="input-field">
+                        <textarea id="modalMessageBody" class="materialize-textarea" name="body" required></textarea>
+                        <label for="modalMessageBody">Your message</label>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="modal-close btn grey waves-effect waves-light">Cancel</button>
+                        <button type="submit" class="btn pink waves-effect waves-light">Send Message</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
 </body>
 </html>
