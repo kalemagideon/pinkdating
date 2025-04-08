@@ -68,13 +68,75 @@ function isLoggedIn() {
     return isset($_SESSION['user_id']);
 }
 
+//file compress function
+//The number 50 represents the percentage to which the image is compressed
+function compressImage($source, $destination, $quality = 50, $maxWidth = 800) {
+    $info = getimagesize($source);
+    
+    if ($info['mime'] == 'image/jpeg') {
+        $image = imagecreatefromjpeg($source);
+    } elseif ($info['mime'] == 'image/png') {
+        $image = imagecreatefrompng($source);
+    } elseif ($info['mime'] == 'image/gif') {
+        $image = imagecreatefromgif($source);
+    } else {
+        return false; // Unsupported image type
+    }
+    
+    // Get current dimensions
+    $width = imagesx($image);
+    $height = imagesy($image);
+    
+    // Calculate new dimensions if needed
+    if ($width > $maxWidth) {
+        $newHeight = (int)($height * ($maxWidth / $width));
+        $newWidth = $maxWidth;
+        
+        // Create new image with new dimensions
+        $newImage = imagecreatetruecolor($newWidth, $newHeight);
+        
+        // Preserve transparency for PNG and GIF
+        if ($info['mime'] == 'image/png' || $info['mime'] == 'image/gif') {
+            imagecolortransparent($newImage, imagecolorallocatealpha($newImage, 0, 0, 0, 127));
+            imagealphablending($newImage, false);
+            imagesavealpha($newImage, true);
+        }
+        
+        // Resize the image
+        imagecopyresampled($newImage, $image, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height);
+        $image = $newImage;
+    }
+    
+    // Save the compressed image
+    if ($info['mime'] == 'image/jpeg') {
+        imagejpeg($image, $destination, $quality);
+    } elseif ($info['mime'] == 'image/png') {
+        imagepng($image, $destination, 9 - round($quality / 10)); // PNG quality is 0-9
+    } elseif ($info['mime'] == 'image/gif') {
+        imagegif($image, $destination);
+    }
+    
+    // Free up memory
+    imagedestroy($image);
+    
+    return true;
+}
+
+
 function handleFileUpload($file) {
     if ($file && $file['error'] === UPLOAD_ERR_OK) {
         $fileExt = pathinfo($file['name'], PATHINFO_EXTENSION);
         $fileName = uniqid('profile_') . '.' . $fileExt;
+        $tempPath = $file['tmp_name'];
         $filePath = UPLOAD_DIR . $fileName;
         
-        if (move_uploaded_file($file['tmp_name'], $filePath)) {
+        // First compress the image
+        if (compressImage($tempPath, $filePath)) {
+            return $filePath;
+        }
+        
+        // Fallback to regular upload if compression fails
+        if (move_uploaded_file($tempPath, $filePath)) {
             return $filePath;
         }
     }
@@ -211,7 +273,7 @@ function getUnifiedInbox($userId, $pdo) {
 // =============================================
 // FORM PROCESSING
 // =============================================
-$action = $_GET['action'] ?? 'view_inbox';
+$action = $_GET['action'] ?? (isLoggedIn() ? 'view_inbox' : 'login');
 $error = '';
 $success = '';
 
@@ -263,9 +325,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'register') {
         $errors[] = 'Gender is required';
     }
     
+    if ($profilePic && $profilePic['error'] !== UPLOAD_ERR_OK && $profilePic['error'] !== UPLOAD_ERR_NO_FILE) {
+        $errors[] = 'Profile picture upload error';
+    }
+
+
     if (empty($errors)) {
         $profilePicPath = handleFileUpload($profilePic);
         $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
+
+        if ($profilePic && !$profilePicPath) {
+            $errors[] = 'Failed to process profile picture. Please try another image.';
+        }
+        
         
         try {
             $stmt = $pdo->prepare("
@@ -784,60 +856,59 @@ if ($action === 'get_message_details' && isset($_GET['message_id'])) {
 <body>
     <!-- Navigation -->
     <nav>
-        <div class="nav-wrapper">
-            <a href="?action=view_inbox" class="brand-logo">
-                <i class="material-icons">favorite</i> Pink Dating
-            </a>
-            
-            <ul class="right hide-on-med-and-down">
-                <?php if (isLoggedIn()): ?>
-                    <li>
-                        <a href="#" class="dropdown-trigger nav-user-profile" data-target="user-dropdown">
-                            <img src="<?= getProfilePic($_SESSION['profile_pic']) ?>" class="profile-pic">
-                            <?= htmlspecialchars($_SESSION['username']) ?>
-                            <i class="material-icons right">arrow_drop_down</i>
-                        </a>
-                    </li>
-                <?php else: ?>
-                    <li><a href="?action=login" class="waves-effect waves-light">Login</a></li>
-                    <li><a href="?action=register" class="waves-effect waves-light">Register</a></li>
-                <?php endif; ?>
-            </ul>
-            
-            <!-- Mobile sidenav trigger -->
-            <a href="#" data-target="mobile-nav" class="sidenav-trigger right"><i class="material-icons">menu</i></a>
-        </div>
-    </nav>
+    <div class="nav-wrapper">
+        <a href="?action=view_inbox" class="brand-logo">
+            <i class="material-icons">favorite</i> Pink Dating
+        </a>
+        
+        <ul class="right hide-on-med-and-down">
+            <?php if (isLoggedIn()): ?>
+                <li>
+                    <a href="#" class="dropdown-trigger nav-user-profile" data-target="user-dropdown">
+                        <img src="<?= getProfilePic($_SESSION['profile_pic']) ?>" class="profile-pic">
+                        <?= htmlspecialchars($_SESSION['username']) ?>
+                        <i class="material-icons right">arrow_drop_down</i>
+                    </a>
+                </li>
+            <?php else: ?>
+                <li><a href="?action=login" class="waves-effect waves-light hide-on-small-only">Login</a></li>
+                <li><a href="?action=register" class="waves-effect waves-light hide-on-small-only">Register</a></li>
+            <?php endif; ?>
+        </ul>
+        
+        <!-- Mobile sidenav trigger - always show for mobile -->
+        <a href="#" data-target="mobile-nav" class="sidenav-trigger right"><i class="material-icons">menu</i></a>
+    </div>
+</nav>
 
     
     <!-- Mobile Navigation -->
     <ul class="sidenav" id="mobile-nav">
-        <?php if (isLoggedIn()): ?>
-            <li>
-                <div class="user-view">
-                    <div class="background" style="background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);">
-                    </div>
-                    <a href="#">
-                        <img class="circle" src="<?= getProfilePic($_SESSION['profile_pic']) ?>">
-                    </a>
-                    <a href="#">
-                        <span class="white-text name"><?= htmlspecialchars($_SESSION['username']) ?></span>
-                    </a>
-                    <a href="#">
-                        <span class="white-text email"><?= htmlspecialchars($_SESSION['email']) ?></span>
-                    </a>
+    <?php if (isLoggedIn()): ?>
+        <li>
+            <div class="user-view">
+                <div class="background" style="background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);">
                 </div>
-            </li>
-            <li><a href="?action=view_inbox"><i class="material-icons">inbox</i> Inbox</a></li>
-            <li><a href="?action=compose"><i class="material-icons">send</i> Compose</a></li>
-            <li class="divider"></li>
-            <li><a href="?action=logout"><i class="material-icons">exit_to_app</i> Logout</a></li>
-        <?php else: ?>
-            <li><a href="?action=login"><i class="material-icons">login</i> Login</a></li>
-            <li><a href="?action=register"><i class="material-icons">person_add</i> Register</a></li>
-        <?php endif; ?>
-    </ul>
-
+                <a href="#">
+                    <img class="circle" src="<?= getProfilePic($_SESSION['profile_pic']) ?>">
+                </a>
+                <a href="#">
+                    <span class="white-text name"><?= htmlspecialchars($_SESSION['username']) ?></span>
+                </a>
+                <a href="#">
+                    <span class="white-text email"><?= htmlspecialchars($_SESSION['email']) ?></span>
+                </a>
+            </div>
+        </li>
+        <li><a href="?action=view_inbox"><i class="material-icons">inbox</i> Inbox</a></li>
+        <li><a href="?action=compose"><i class="material-icons">send</i> Compose</a></li>
+        <li class="divider"></li>
+        <li><a href="?action=logout"><i class="material-icons">exit_to_app</i> Logout</a></li>
+    <?php else: ?>
+        <li><a href="?action=login" class="waves-effect waves-light"><i class="material-icons">login</i> Login</a></li>
+        <li><a href="?action=register" class="waves-effect waves-light"><i class="material-icons">person_add</i> Register</a></li>
+    <?php endif; ?>
+</ul>
     
 
     <!-- User dropdown -->
@@ -883,8 +954,8 @@ if ($action === 'get_message_details' && isset($_GET['message_id'])) {
             </div>
         <?php endif; ?>
 
-        <?php if (!isLoggedIn() && in_array($action, ['login', 'register'])): ?>
-            <!-- Auth Forms -->
+        <?php if (!isLoggedIn()): ?>
+            <!-- Auth Forms - Show by default for non-logged-in users -->
             <div class="row">
                 <div class="col s12 m8 offset-m2">
                     <div class="card">
@@ -1244,7 +1315,7 @@ if ($action === 'get_message_details' && isset($_GET['message_id'])) {
  
     <!-- Message User Card Modal -->
 <!-- Message User Modal -->
-
+<!-- Message User Modal -->
 <div id="messageUserModal" class="modal">
     <div class="modal-content">
         <h4>Message <span id="modalUserName"></span></h4>
@@ -1260,7 +1331,7 @@ if ($action === 'get_message_details' && isset($_GET['message_id'])) {
                         <label for="modalMessageBody">Your message</label>
                     </div>
                     <div class="modal-footer">
-                        <a href="#!" class="modal-close btn grey waves-effect waves-light">Cancel</a>
+                        <button type="button" class="modal-close btn grey waves-effect waves-light">Cancel</button>
                         <button type="submit" class="btn pink waves-effect waves-light">Send Message</button>
                     </div>
                 </form>
@@ -1272,9 +1343,6 @@ if ($action === 'get_message_details' && isset($_GET['message_id'])) {
     <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-
-
-            
             // Initialize dropdown
             M.Dropdown.init(document.querySelectorAll('.dropdown-trigger'), {
                 coverTrigger: false,
@@ -1283,26 +1351,17 @@ if ($action === 'get_message_details' && isset($_GET['message_id'])) {
             });
 
             // Initialize the message user modal when user card is clicked
-            const modals = {
-        replyModal: M.Modal.init(document.getElementById('replyModal'), {
-            dismissible: true,
-            onCloseEnd: function() {
-                document.getElementById('reply_body').value = '';
-            }
-        }),
-
+            const messageModals = {
+        replyModal: M.Modal.init(document.getElementById('replyModal')),
         messageUserModal: M.Modal.init(document.getElementById('messageUserModal'), {
+            preventScrolling: true,
             dismissible: true,
-            onCloseStart: function() {
-                // Optional: Add any pre-close actions here
-            },
             onCloseEnd: function() {
-                document.getElementById('modalMessageBody').value = '';
+                document.getElementById('messageUserForm').reset();
             }
         })
     };
 
-    window.appModals = modals;
 
     window.openUserModal = function(userId, userName, userImage) {
         document.getElementById('modalUserName').textContent = userName;
@@ -1310,13 +1369,17 @@ if ($action === 'get_message_details' && isset($_GET['message_id'])) {
         document.getElementById('modalUserId').value = userId;
         document.getElementById('modalMessageBody').value = '';
         
-        modals.messageUserModal.open();
+        messageModals.messageUserModal.open();
         
         setTimeout(() => {
             document.getElementById('modalMessageBody').focus();
         }, 100);
+
+        window.closeUserModal = function() {
+        modals.messageUserModal.close();
     };
 
+    };
 
 
             // horizontal cards
